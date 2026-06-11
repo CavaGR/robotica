@@ -8,7 +8,64 @@ import numpy as np
 import websockets
 from flask import Flask, render_template
 from flask_socketio import SocketIO
+import serial
+import json
 
+
+ser = serial.Serial('/dev/serial0',115200,timeout=1)
+
+class PID:
+
+    def __init__(self, kp, ki, kd, output_limit=None):
+
+        self.kp = kp
+        self.ki = ki
+        self.kd = kd
+
+        self.output_limit = output_limit
+
+        self.integral = 0.0
+        self.prev_error = 0.0
+        self.prev_time = time.time()
+
+    def update(self, error):
+
+        now = time.time()
+
+        dt = now - self.prev_time
+
+        if dt <= 0:
+            return 0.0
+
+        self.integral += error * dt
+
+        derivative = (error - self.prev_error) / dt
+
+        output = (
+            self.kp * error +
+            self.ki * self.integral +
+            self.kd * derivative
+        )
+
+        if self.output_limit is not None:
+
+            output = max(
+                -self.output_limit,
+                min(self.output_limit, output)
+            )
+
+        self.prev_error = error
+        self.prev_time = now
+
+        return output
+
+    def reset(self):
+
+        self.integral = 0.0
+        self.prev_error = 0.0
+        self.prev_time = time.time()
+        
+        
 try:
     from pupil_apriltags import Detector
 except ImportError:
@@ -73,6 +130,70 @@ def handle_mode(data):
     socketio.emit("status", {"mode": modo})
 
 
+
+# ============================================================
+# CONFIGURAÇÕES DO PID
+# ============================================================
+
+z_ref = 150 #em mm
+
+pid_x = PID(
+    kp=2.0,
+    ki=0.0,
+    kd=0.2,
+    output_limit=1.0
+)
+
+pid_z = PID(
+    kp=1.0,
+    ki=0.0,
+    kd=0.1,
+    output_limit=1.0
+)
+
+
+def calcular_controle(x, z):
+
+
+    erro_x = x
+    erro_z = z - z_ref
+
+    if abs(erro_x) < 20:
+        erro_x = 0.0
+
+    if abs(erro_z) < 30:
+        erro_z = 0
+
+    w = pid_x.update(erro_x)
+
+    v = pid_z.update(erro_z)
+
+    # gira primeiro se estiver muito desalinhado
+    if abs(erro_x) > 150:
+        v = 0.0
+
+    return v, w
+
+
+def diferencial(v, w):
+
+    motor_esq = v - w
+    motor_dir = v + w
+
+    motor_esq = max(-1.0, min(1.0, motor_esq))
+    motor_dir = max(-1.0, min(1.0, motor_dir))
+
+    return motor_esq, motor_dir
+    
+    
+def envio_esp(dados):
+    msg = json.dumps(dados) + "\n"
+    ser.write(msg.encode())
+    print("TX:", msg.strip())
+    return
+
+
+    
 # ============================================================
 # CONFIGURAÇÕES DA CÂMERA / VÍDEO
 # ============================================================
@@ -209,7 +330,7 @@ def processar_tag(imagem, tag, parametros_camera_local):
 
     x = vetor_translacao[0][0] * 1000.0
     y = vetor_translacao[1][0] * 1000.0
-    z = vetor_translacao[2][0] * 1000.0
+    z = -vetor_translacao[2][0] * 1000.0
 
     z_calibrado = z * 0.94
 
@@ -223,6 +344,13 @@ def processar_tag(imagem, tag, parametros_camera_local):
     motor_x = x - z * math.sin(rad_giro_horizontal)
     motor_y = y + z * math.sin(rad_inclinacao_vertical)
     motor_z = z * math.cos(rad_giro_horizontal) - x * math.sin(rad_giro_horizontal)
+    
+    v, w = calcular_controle(motor_x, motor_z)
+    l, r = diferencial(v,w)
+    
+    #print(f"v={v} w ={w}") 
+    #print(f"l={l} r ={r}")
+    #envio_esp(dados)
 
     familia_tag = tag.tag_family.decode("utf-8") if isinstance(tag.tag_family, bytes) else str(tag.tag_family)
     id_tag = int(tag.tag_id)
@@ -230,7 +358,7 @@ def processar_tag(imagem, tag, parametros_camera_local):
     x_texto = int(tag.corners[0][0])
     y_texto = int(tag.corners[0][1]) - 10
 
-    # Evita escrever texto fora do topo da imagem.
+    
     y_texto = max(y_texto, 25)
 
     desenhar_texto(
