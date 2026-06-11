@@ -19,6 +19,19 @@
     </div>
 </div>
 
+<div class="mode-control">
+<span>MANUAL</span>
+<label class="switch">
+<input type="checkbox" id="modeSwitch">
+<span class="slider"></span>
+</label>
+<span>AUTO</span>
+</div>
+
+<div id="modeStatus">
+    Modo: MANUAL
+</div>
+
 <div class="center">
 
     <div class="panel">
@@ -51,10 +64,32 @@ const socket = io();
 
 let throttle = 0;
 let yaw = 0;
+let automaticMode = false;
+
+const modeStatus = document.getElementById("modeStatus");
+const modeSwitch = document.getElementById("modeSwitch");
+
+socket.on("status", (data) => {
+    if(!data.mode)
+        return;
+    modeStatus.innerText = "Modo: " + data.mode;
+    automaticMode = data.mode == "AUTO";
+    modeSwitch.checked = automaticMode;
+});
+
+modeSwitch.addEventListener("change",()=>{
+    automaticMode = modeSwitch.checked;
+    socket.emit("mode",{
+        mode: automaticMode
+        ? "AUTO"
+        : "MANUAL"
+    });
+});    
 
 /* =======================================================
    VÍDEO VIA WEBSOCKET
    ======================================================= */
+
 
 const videoHost = window.location.hostname || "localhost";
 const videoSocket = new WebSocket(`ws://${videoHost}:8765`);
@@ -136,6 +171,8 @@ right.on('end', () => {
    ======================================================= */
 
 function send(){
+    if (automaticMode)
+        return;
     socket.emit('control', {
         throttle: throttle,
         yaw: yaw
