@@ -72,6 +72,19 @@ except ImportError:
     Detector = None
 
 
+
+_ultimo_envio = 0.0
+
+def envio_esp(dados):
+    global _ultimo_envio
+    agora = time.time()
+    if agora - _ultimo_envio < 0.05:   # máx 20 msg/s
+        return
+    _ultimo_envio = agora
+    msg = json.dumps(dados) + "\n"
+    ser.write(msg.encode())
+    print("TX:", msg.strip())
+
 # ============================================================
 # FLASK + SOCKET.IO
 # ============================================================
@@ -104,6 +117,7 @@ def handle_disconnect():
     print("Cliente Socket.IO desconectado")
 
 
+dados = {}
 @socketio.on("control")
 def handle_control(data):
     """
@@ -115,6 +129,8 @@ def handle_control(data):
         "yaw": -0.2
     }
     """
+    dados = data
+    envio_esp(dados)
     print("Controle recebido:", data)
 
     # Aqui, futuramente, você pode enviar esses valores para Arduino,
@@ -186,11 +202,7 @@ def diferencial(v, w):
     return motor_esq, motor_dir
     
     
-def envio_esp(dados):
-    msg = json.dumps(dados) + "\n"
-    ser.write(msg.encode())
-    print("TX:", msg.strip())
-    return
+
 
 
     
@@ -350,7 +362,7 @@ def processar_tag(imagem, tag, parametros_camera_local):
     
     #print(f"v={v} w ={w}") 
     #print(f"l={l} r ={r}")
-    #envio_esp(dados)
+    
 
     familia_tag = tag.tag_family.decode("utf-8") if isinstance(tag.tag_family, bytes) else str(tag.tag_family)
     id_tag = int(tag.tag_id)
