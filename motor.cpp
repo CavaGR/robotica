@@ -121,9 +121,30 @@ float setpointM2 = 0.0f;
 int pwmM2 = 0;
 int sentidoAnteriorM2 = 0;
 
+// =====================================================
+// MOTOR 3
+// =====================================================
+
+const int pinDirecaoA_M3 = 23;   // in5
+const int pinDirecaoB_M3 = 22;   // in6
+const int pinoEnable_M3  = 5;    // enable3 (PWM)
+
+const int enc3_A = 18;
+const int enc3_B = 19;
+
+ESP32Encoder encoderM3;
+long oldPosM3 = 0;
+
+float rotacoesM3 = 0.0f;
+float setpointM3 = 0.0f;
+
+int pwmM3 = 0;
+int sentidoAnteriorM3 = 0;
+
 // Últimos deltas para diagnóstico.
 long ultimoDeltaPulsosM1 = 0;
 long ultimoDeltaPulsosM2 = 0;
+long ultimoDeltaPulsosM3 = 0;
 
 // =====================================================
 // CONFIGURAÇÕES DOS MOTORES E ENCODERS
