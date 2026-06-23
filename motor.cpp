@@ -6,9 +6,16 @@
 // =====================================================
 // CONFIGURAÇÕES DE DEBUG
 // =====================================================
+//
+// ATENÇÃO: no modo USB, o debug compartilha a MESMA porta
+// dos comandos JSON. Se ligar DEBUG_ATIVO com a Raspberry
+// conectada, os prints de debug vão se misturar com os
+// comandos/telemetria no mesmo canal. Use DEBUG_ATIVO = true
+// apenas em bancada (Serial Monitor, sem a Pi), ou faça a Pi
+// ignorar toda linha que não comece com '{'.
 
-// Coloque false para remover os prints de diagnóstico.
-const bool DEBUG_ATIVO = true;
+// Coloque true apenas para diagnóstico em bancada.
+const bool DEBUG_ATIVO = false;
 
 // Mostra cada JSON completo recebido.
 const bool DEBUG_JSON_RECEBIDO = false;
@@ -51,17 +58,11 @@ unsigned long instanteDebugAnterior = 0;
 // COMUNICAÇÃO SERIAL
 // =====================================================
 
-// USB: monitor serial e debug.
+// USB nativo do ESP32 (conector micro-USB).
+// É por aqui que entram os comandos JSON da Raspberry Pi
+// e saem o ack e a telemetria. É a MESMA porta usada para
+// gravar o sketch e (opcionalmente) para debug.
 const uint32_t BAUD_USB = 115200;
-
-// UART entre Raspberry Pi e ESP32.
-const uint32_t BAUD_RASPBERRY = 115200;
-
-// UART2 do ESP32.
-const int PINO_RX_RASPBERRY = 16;
-const int PINO_TX_RASPBERRY = 17;
-
-HardwareSerial SerialRaspberry(2);
 
 // Tempo sem comandos antes da parada automática.
 const unsigned long TIMEOUT_COMANDO_MS = 1000;
@@ -223,7 +224,7 @@ const float LIMITE_INTEGRAL = 200.0f;
 
 // Envia resposta para o Raspberry e replica na USB.
 void enviarMensagem(const char *mensagem) {
-  SerialRaspberry.println(mensagem);
+  Serial.println(mensagem);
 
   if (DEBUG_ATIVO) {
     Serial.print("[TX RASPBERRY] ");
@@ -590,12 +591,12 @@ bool processarJson(const char *mensagem) {
       mensagem
     );
 
-    SerialRaspberry.print(
+    Serial.print(
       "{\"erro\":\"json_invalido\",\"detalhe\":\""
     );
 
-    SerialRaspberry.print(erroJson.c_str());
-    SerialRaspberry.println("\"}");
+    Serial.print(erroJson.c_str());
+    Serial.println("\"}");
 
     return false;
   }
@@ -707,16 +708,16 @@ bool processarJson(const char *mensagem) {
     totalJsonValidos
   );
 */
-  SerialRaspberry.print(
+  Serial.print(
     "{\"ack\":true,\"throttle\":"
   );
 
-  SerialRaspberry.print(throttle, 3);
+  Serial.print(throttle, 3);
 
-  SerialRaspberry.print(",\"yaw\":");
-  SerialRaspberry.print(yaw, 3);
+  Serial.print(",\"yaw\":");
+  Serial.print(yaw, 3);
 
-  SerialRaspberry.println("}");
+  Serial.println("}");
 
   return true;
 }
@@ -732,9 +733,9 @@ void receberDadosRaspberry() {
   static int profundidadeChaves = 0;
   static bool recebendoJson = false;
 
-  while (SerialRaspberry.available() > 0) {
+  while (Serial.available() > 0) {
     char caractere =
-      static_cast<char>(SerialRaspberry.read());
+      static_cast<char>(Serial.read());
 
     totalBytesRecebidos++;
 
@@ -1096,10 +1097,6 @@ void executarControle(
   long posicaoM1 = encoderM1.getCount();
   long posicaoM2 = encoderM2.getCount();
 
-
-
-  interrupts();
-
   long deltaPulsosM1 =
     posicaoM1 - oldPosM1;
 
@@ -1240,7 +1237,7 @@ void enviarTelemetria(
 
   instanteTelemetriaAnterior = instanteAtual;
 
-  escreverTelemetria(SerialRaspberry);
+  escreverTelemetria(Serial);
 }
 
 // =====================================================
@@ -1256,13 +1253,7 @@ void imprimirMapaDePinos() {
   Serial.println("========== MAPA DE PINOS ==========");
 
   DEBUGF(
-    "Raspberry RX ESP32: GPIO%d\n",
-    PINO_RX_RASPBERRY
-  );
-
-  DEBUGF(
-    "Raspberry TX ESP32: GPIO%d\n",
-    PINO_TX_RASPBERRY
+    "Comunicacao: USB nativo (micro-USB)\n"
   );
 
   DEBUGF(
@@ -1345,28 +1336,8 @@ void setup() {
   DEBUG_PRINTLN("======================================");
 
   DEBUGF(
-    "[SETUP] Monitor USB iniciado em %lu baud.\n",
+    "[SETUP] Comunicacao USB iniciada em %lu baud.\n",
     BAUD_USB
-  );
-
-  // ---------------- UART RASPBERRY ----------------
-
-  DEBUG_PRINTLN(
-    "[SETUP] Inicializando UART2 do Raspberry..."
-  );
-
-  SerialRaspberry.begin(
-    BAUD_RASPBERRY,
-    SERIAL_8N1,
-    PINO_RX_RASPBERRY,
-    PINO_TX_RASPBERRY
-  );
-
-  DEBUGF(
-    "[SETUP] UART Raspberry: baud=%lu RX=%d TX=%d\n",
-    BAUD_RASPBERRY,
-    PINO_RX_RASPBERRY,
-    PINO_TX_RASPBERRY
   );
 
   imprimirMapaDePinos();
@@ -1445,14 +1416,9 @@ void setup() {
   enviarMensagem(
     "{\"estado\":\"inicializado\","
     "\"placa\":\"ESP32-WROOM\","
-    "\"raspberry_baud\":115200,"
-    "\"raspberry_rx_gpio\":16,"
-    "\"raspberry_tx_gpio\":17,"
-    "\"rpm_maximo\":180,"
-    "\"encoder_vcc\":\"GPIO32_HIGH\","
-    "\"encoder_gnd\":\"GPIO4_LOW\","
-    "\"encoder_m2_a\":\"GPIO36_VP\","
-    "\"encoder_m2_b\":\"GPIO39_VN\"}"
+    "\"comunicacao\":\"usb\","
+    "\"baud\":115200,"
+    "\"rpm_maximo\":180}"
   );
 }
 
