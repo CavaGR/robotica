@@ -81,9 +81,9 @@ const unsigned long TEMPO_ESTABILIZACAO_ENCODER_MS = 100;
 // MOTOR 1
 // =====================================================
 
-const int pinDirecaoA_M1 = 13;
+const int pinDirecaoA_M1 = 12;
 const int pinDirecaoB_M1 = 14;
-const int pinoEnable_M1  = 25;
+const int pinoEnable_M1  = 13;
 
 const int enc1_A = 34;
 const int enc1_B = 35;
@@ -101,9 +101,9 @@ int sentidoAnteriorM1 = 0;
 // MOTOR 2
 // =====================================================
 
-const int pinDirecaoA_M2 = 26;
-const int pinDirecaoB_M2 = 27;
-const int pinoEnable_M2  = 33;
+const int pinDirecaoA_M2 = 27;
+const int pinDirecaoB_M2 = 26;
+const int pinoEnable_M2  = 25; 
 
 // GPIO36 aparece como VP.
 // GPIO39 aparece como VN.
