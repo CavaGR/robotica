@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <math.h>
+#include <ESP32Encoder.h>
 
 // =====================================================
 // CONFIGURAÇÕES DE DEBUG
@@ -20,7 +21,7 @@ const bool DEBUG_BYTES_UART = false;
 const bool DEBUG_CONTROLE = true;
 
 // Intervalo entre relatórios periódicos.
-const unsigned long INTERVALO_DEBUG_MS = 1500;
+const unsigned long INTERVALO_DEBUG_MS = 300;
 
 unsigned long instanteDebugAnterior = 0;
 
@@ -73,7 +74,7 @@ const unsigned long TIMEOUT_COMANDO_MS = 1000;
 const int pinoVccEncoder = 32;
 
 // GPIO4 mantido em LOW.
-const int pinoGndEncoder = 4;
+const int pinoGndEncoder = 33;
 
 const unsigned long TEMPO_ESTABILIZACAO_ENCODER_MS = 100;
 
@@ -88,7 +89,7 @@ const int pinoEnable_M1  = 13;
 const int enc1_A = 34;
 const int enc1_B = 35;
 
-volatile long posAtualM1 = 0;
+ESP32Encoder encoderM1;
 long oldPosM1 = 0;
 
 float rotacoesM1 = 0.0f;
@@ -107,10 +108,10 @@ const int pinoEnable_M2  = 25;
 
 // GPIO36 aparece como VP.
 // GPIO39 aparece como VN.
-const int enc2_A = 36;
-const int enc2_B = 39;
+const int enc2_A = 39;
+const int enc2_B = 36;
 
-volatile long posAtualM2 = 0;
+ESP32Encoder encoderM2;
 long oldPosM2 = 0;
 
 float rotacoesM2 = 0.0f;
@@ -190,24 +191,24 @@ struct ControladorPID {
 };
 
 ControladorPID pidM1 = {
-  1.50f,  // Kp
-  0.80f,  // Ki
-  0.02f,  // Kd
+  2.0f,
+  0.30f,
+  0.00f,
   0.0f,
   0.0f,
   false
 };
 
 ControladorPID pidM2 = {
-  1.50f,
-  0.80f,
-  0.02f,
+  2.0f,
+  0.30f,
+  0.00f,
   0.0f,
   0.0f,
   false
 };
 
-const float LIMITE_INTEGRAL = 300.0f;
+const float LIMITE_INTEGRAL = 200.0f;
 
 // =====================================================
 // INTERRUPÇÕES DOS ENCODERS
@@ -215,21 +216,6 @@ const float LIMITE_INTEGRAL = 300.0f;
 
 // Não coloque Serial.print dentro das interrupções.
 
-void IRAM_ATTR lerEncoder1() {
-  if (digitalRead(enc1_A) == digitalRead(enc1_B)) {
-    posAtualM1++;
-  } else {
-    posAtualM1--;
-  }
-}
-
-void IRAM_ATTR lerEncoder2() {
-  if (digitalRead(enc2_A) == digitalRead(enc2_B)) {
-    posAtualM2++;
-  } else {
-    posAtualM2--;
-  }
-}
 
 // =====================================================
 // MENSAGENS PARA RASPBERRY
@@ -519,12 +505,12 @@ void atualizarSetpoints() {
     -1.0f,
     1.0f
   );
-
+/*
   if (
     throttle != throttleOriginal ||
     yaw != yawOriginal
   ) {
-    DEBUGF(
+//    DEBUGF(
       "[COMANDO] Valores limitados: throttle %.3f -> %.3f, "
       "yaw %.3f -> %.3f\n",
       throttleOriginal,
@@ -533,7 +519,7 @@ void atualizarSetpoints() {
       yaw
     );
   }
-
+*/
   float comandoM1 = throttle + yaw;
   float comandoM2 = throttle - yaw;
 
@@ -715,12 +701,12 @@ bool processarJson(const char *mensagem) {
   ultimoComandoRecebido = millis();
   comandoRecebido = true;
   totalJsonValidos++;
-
+/*
   DEBUGF(
     "[JSON OK] Comando válido número %lu processado.\n",
     totalJsonValidos
   );
-
+*/
   SerialRaspberry.print(
     "{\"ack\":true,\"throttle\":"
   );
@@ -1107,13 +1093,10 @@ void executarControle(
   float dt =
     intervalo / 1000.0f;
 
-  long posicaoM1;
-  long posicaoM2;
+  long posicaoM1 = encoderM1.getCount();
+  long posicaoM2 = encoderM2.getCount();
 
-  noInterrupts();
 
-  posicaoM1 = posAtualM1;
-  posicaoM2 = posAtualM2;
 
   interrupts();
 
@@ -1427,58 +1410,25 @@ void setup() {
     pull-up interno.
   */
 
-  pinMode(enc1_A, INPUT);
-  pinMode(enc1_B, INPUT);
+  // Pull-up interno da biblioteca. ATENÇÃO: não tem efeito nos
+  // pinos 34/35/36/39, que são input-only sem pull-up no hardware.
+  // Se o encoder for open-collector, ainda precisará de 10k externo.
+  ESP32Encoder::useInternalWeakPullResistors = puType::up;
 
-  pinMode(enc2_A, INPUT);
-  pinMode(enc2_B, INPUT);
+  // Quadratura completa (conta bordas dos dois canais => 4x resolução).
+  encoderM1.attachFullQuad(enc1_A, enc1_B);
+  encoderM2.attachFullQuad(enc2_A, enc2_B);
 
-  DEBUGF(
-    "[SETUP] Estado inicial M1 Encoder A=%d B=%d\n",
-    digitalRead(enc1_A),
-    digitalRead(enc1_B)
-  );
-
-  DEBUGF(
-    "[SETUP] Estado inicial M2 Encoder A=%d B=%d\n",
-    digitalRead(enc2_A),
-    digitalRead(enc2_B)
-  );
-
-  noInterrupts();
-
-  posAtualM1 = 0;
-  posAtualM2 = 0;
+  encoderM1.clearCount();
+  encoderM2.clearCount();
 
   oldPosM1 = 0;
   oldPosM2 = 0;
 
-  interrupts();
-
-  DEBUG_PRINTLN(
-    "[SETUP] Contadores dos encoders zerados."
-  );
-
-  attachInterrupt(
-    digitalPinToInterrupt(enc1_A),
-    lerEncoder1,
-    CHANGE
-  );
-
   DEBUGF(
-    "[SETUP] Interrupção do encoder M1 anexada ao GPIO%d.\n",
-    enc1_A
-  );
-
-  attachInterrupt(
-    digitalPinToInterrupt(enc2_A),
-    lerEncoder2,
-    CHANGE
-  );
-
-  DEBUGF(
-    "[SETUP] Interrupção do encoder M2 anexada ao GPIO%d.\n",
-    enc2_A
+    "[SETUP] Encoders ESP32Encoder iniciados. "
+    "M1=(GPIO%d,GPIO%d) M2=(GPIO%d,GPIO%d)\n",
+    enc1_A, enc1_B, enc2_A, enc2_B
   );
 
   // ---------------- TEMPORIZADORES ----------------
