@@ -1,4 +1,5 @@
 import asyncio
+import glob
 import math
 import threading
 import time
@@ -12,7 +13,41 @@ import serial
 import json
 
 
-ser = serial.Serial('/dev/serial0',115200,timeout=1)
+# ============================================================
+# CONEXÃO SERIAL COM O ESP32 (USB)
+# ============================================================
+# O ESP32 conecta pelo cabo micro-USB numa porta USB da Raspberry.
+# A Pi o enxerga como /dev/ttyUSB* (CP2102/CH340) ou /dev/ttyACM*.
+# O nome pode mudar entre reboots/portas, então detectamos sozinhos.
+# ============================================================
+
+BAUD_ESP = 115200
+
+
+def abrir_serial_esp(baud=BAUD_ESP):
+    portas = glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*")
+
+    if not portas:
+        raise RuntimeError(
+            "Nenhum ESP32 USB encontrado em /dev/ttyUSB* ou /dev/ttyACM*. "
+            "Confira o cabo e se o usuário está no grupo 'dialout'."
+        )
+
+    porta = portas[0]
+    print(f"Abrindo ESP32 em {porta} @ {baud} baud")
+
+    s = serial.Serial(porta, baud, timeout=1)
+
+    # Ao abrir a porta USB, o ESP32 reseta (DTR/RTS dispara o boot).
+    # Espera o boot antes de enviar qualquer comando.
+    time.sleep(2)
+    s.reset_input_buffer()
+
+    return s
+
+
+ser = abrir_serial_esp()
+
 
 class PID:
 
@@ -64,26 +99,75 @@ class PID:
         self.integral = 0.0
         self.prev_error = 0.0
         self.prev_time = time.time()
-        
-        
+
+
 try:
     from pupil_apriltags import Detector
 except ImportError:
     Detector = None
 
 
+# ============================================================
+# ENVIO DE COMANDOS PARA O ESP32
+# ============================================================
 
 _ultimo_envio = 0.0
 
+
 def envio_esp(dados):
+    """
+    Envia um comando JSON para o ESP32 pela porta USB.
+    Limita a taxa a ~20 msg/s para não afogar o loop do ESP.
+    """
     global _ultimo_envio
+
     agora = time.time()
     if agora - _ultimo_envio < 0.05:   # máx 20 msg/s
         return
     _ultimo_envio = agora
+
     msg = json.dumps(dados) + "\n"
-    ser.write(msg.encode())
+
+    try:
+        ser.write(msg.encode())
+    except Exception as erro:
+        print("Erro ao escrever na serial do ESP:", erro)
+        return
+
     print("TX:", msg.strip())
+
+
+# ============================================================
+# LEITURA DE TELEMETRIA DO ESP32 (opcional)
+# ============================================================
+# O ESP envia ack e telemetria pela MESMA porta USB.
+# Lemos linha a linha e ignoramos qualquer coisa que não seja
+# um JSON começando com '{' (ex.: prints de debug em bancada).
+# ============================================================
+
+LER_TELEMETRIA = True
+
+
+def ler_telemetria_esp():
+    while True:
+        try:
+            linha = ser.readline().decode(errors="ignore").strip()
+
+            if not linha or not linha.startswith("{"):
+                continue
+
+            try:
+                dados_esp = json.loads(linha)
+            except json.JSONDecodeError:
+                continue
+
+            # Repassa para a interface web (use se quiser exibir).
+            socketio.emit("telemetria", dados_esp)
+
+        except Exception as erro:
+            print("Erro lendo telemetria do ESP:", erro)
+            time.sleep(0.1)
+
 
 # ============================================================
 # FLASK + SOCKET.IO
@@ -117,11 +201,10 @@ def handle_disconnect():
     print("Cliente Socket.IO desconectado")
 
 
-dados = {}
 @socketio.on("control")
 def handle_control(data):
     """
-    Recebe os dados dos dois joysticks.
+    Recebe os dados dos dois joysticks e repassa ao ESP32.
 
     Exemplo:
     {
@@ -129,12 +212,8 @@ def handle_control(data):
         "yaw": -0.2
     }
     """
-    dados = data
-    envio_esp(dados)
+    envio_esp(data)
     print("Controle recebido:", data)
-
-    # Aqui, futuramente, você pode enviar esses valores para Arduino,
-    # ESP32, Raspberry, ponte H, controle de motor etc.
 
 
 @socketio.on("mode")
@@ -146,12 +225,11 @@ def handle_mode(data):
     socketio.emit("status", {"mode": modo})
 
 
-
 # ============================================================
 # CONFIGURAÇÕES DO PID
 # ============================================================
 
-z_ref = 150 #em mm
+z_ref = 150  # em mm
 
 pid_x = PID(
     kp=2.0,
@@ -169,7 +247,6 @@ pid_z = PID(
 
 
 def calcular_controle(x, z):
-
 
     erro_x = x
     erro_z = z - z_ref
@@ -200,12 +277,8 @@ def diferencial(v, w):
     motor_dir = max(-1.0, min(1.0, motor_dir))
 
     return motor_esq, motor_dir
-    
-    
 
 
-
-    
 # ============================================================
 # CONFIGURAÇÕES DA CÂMERA / VÍDEO
 # ============================================================
@@ -214,7 +287,7 @@ CAMERA_ID = 0
 VIDEO_WS_HOST = "0.0.0.0"
 VIDEO_WS_PORT = 8765
 
-LARGURA = 640 
+LARGURA = 640
 ALTURA = 480
 FPS = 8
 QUALIDADE_JPEG = 95
@@ -356,13 +429,12 @@ def processar_tag(imagem, tag, parametros_camera_local):
     motor_x = x - z * math.sin(rad_giro_horizontal)
     motor_y = y + z * math.sin(rad_inclinacao_vertical)
     motor_z = z * math.cos(rad_giro_horizontal) - x * math.sin(rad_giro_horizontal)
-    
+
     v, w = calcular_controle(motor_x, motor_z)
-    l, r = diferencial(v,w)
-    
-    #print(f"v={v} w ={w}") 
-    #print(f"l={l} r ={r}")
-    
+    l, r = diferencial(v, w)
+
+    # print(f"v={v} w ={w}")
+    # print(f"l={l} r ={r}")
 
     familia_tag = tag.tag_family.decode("utf-8") if isinstance(tag.tag_family, bytes) else str(tag.tag_family)
     id_tag = int(tag.tag_id)
@@ -370,7 +442,6 @@ def processar_tag(imagem, tag, parametros_camera_local):
     x_texto = int(tag.corners[0][0])
     y_texto = int(tag.corners[0][1]) - 10
 
-    
     y_texto = max(y_texto, 25)
 
     desenhar_texto(
@@ -379,7 +450,6 @@ def processar_tag(imagem, tag, parametros_camera_local):
         x_texto,
         y_texto
     )
-
 
     desenhar_eixos(
         imagem,
@@ -612,15 +682,8 @@ async def servidor_video():
     ):
         print(f"WebSocket de vídeo rodando em ws://0.0.0.0:{VIDEO_WS_PORT}")
         await transmitir_camera()
-        
 
-def pid_eixo_x():
-    return 
 
-def pid_eixo_z():
-    return 
-    
-    
 def iniciar_servidor_video_em_thread():
     asyncio.run(servidor_video())
 
@@ -635,6 +698,13 @@ if __name__ == "__main__":
         daemon=True
     )
     thread_video.start()
+
+    if LER_TELEMETRIA:
+        thread_telemetria = threading.Thread(
+            target=ler_telemetria_esp,
+            daemon=True
+        )
+        thread_telemetria.start()
 
     socketio.run(
         app,
