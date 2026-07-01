@@ -10,6 +10,20 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 
+<div class="height-slider-panel">
+    <span>Altura</span>
+    <div id="heightValue">
+    0%
+    </div>
+    <input 
+        type="range" 
+        id="heightSlider" 
+        min="0" 
+        max="100" 
+        value="0"
+    >
+</div>
+
 <body>
 
 <div class="topbar">
@@ -62,12 +76,15 @@
 <script>
 const socket = io();
 
+let forkHeight = 0;
 let throttle = 0;
 let yaw = 0;
 let automaticMode = false;
 
 const modeStatus = document.getElementById("modeStatus");
 const modeSwitch = document.getElementById("modeSwitch");
+const heightSlider = document.getElementById("heightSlider");
+const heightValue = document.getElementById("heightValue");
 
 socket.on("status", (data) => {
     if(!data.mode)
@@ -85,6 +102,15 @@ modeSwitch.addEventListener("change",()=>{
         : "MANUAL"
     });
 });    
+
+heightSlider.addEventListener("input", () => {
+    forkHeight = Number(heightSlider.value) / 100;
+    heightValue.innerText = heightSlider.value+"%";
+    document.getElementById("forkBar").style.height =
+        (forkHeight * 100) + "%";
+
+    send();
+});
 
 /* =======================================================
    VÍDEO VIA WEBSOCKET
@@ -127,7 +153,8 @@ const left = nipplejs.create({
     mode: 'static',
     position: { left: '50%', top: '50%' },
     color: 'blue',
-    lockY: true
+    lockY: true,
+    size: 180
 });
 
 left.on('move', (evt, data) => {
@@ -151,7 +178,8 @@ const right = nipplejs.create({
     mode: 'static',
     position: { left: '50%', top: '50%' },
     color: 'red',
-    lockX: true
+    lockX: true,
+    size:180
 });
 
 right.on('move', (evt, data) => {
@@ -173,9 +201,11 @@ right.on('end', () => {
 function send(){
     if (automaticMode)
         return;
+
     socket.emit('control', {
         throttle: throttle,
-        yaw: yaw
+        yaw: yaw,
+        fork_height: forkHeight
     });
 }
 
