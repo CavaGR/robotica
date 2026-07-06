@@ -1,236 +1,1061 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="UTF-8">
-<title>Controle Empilhadeira</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle da Empilhadeira</title>
 
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/nipplejs@0.10.1/dist/nipplejs.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.10.1/dist/nipplejs.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 
-<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <style>
+        :root {
+            --bg: #eef2f6;
+            --card: #ffffff;
+            --card-soft: #f6f8fb;
+            --border: #d8dee6;
+            --text: #17202a;
+            --muted: #66717d;
+            --primary: #1f618d;
+            --primary-soft: #edf4fb;
+            --danger: #922b21;
+            --manual: #2e86de;
+            --auto: #c0392b;
+            --ok: #28b463;
+            --shadow: 0 3px 12px rgba(0, 0, 0, 0.06);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Arial, Helvetica, sans-serif;
+            color: var(--text);
+            background: var(--bg);
+        }
+
+        button,
+        input {
+            font: inherit;
+        }
+
+        button {
+            border: 0;
+            border-radius: 10px;
+            padding: 11px 16px;
+            background: var(--primary);
+            color: white;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.12s ease, opacity 0.12s ease;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        button:disabled,
+        input:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .page {
+            width: min(1180px, calc(100% - 28px));
+            margin: 0 auto;
+            padding: 18px 0 22px;
+        }
+
+        .page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+
+        .page-title h1 {
+            margin: 0;
+            font-size: clamp(22px, 3vw, 34px);
+            line-height: 1.1;
+        }
+
+        .page-title p {
+            margin: 5px 0 0;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .connection-pill {
+            min-width: 118px;
+            padding: 9px 12px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: var(--card);
+            color: var(--muted);
+            font-weight: 700;
+            text-align: center;
+            box-shadow: var(--shadow);
+        }
+
+        .connection-pill.online {
+            color: #196f3d;
+        }
+
+        .connection-pill.offline {
+            color: var(--danger);
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+        }
+
+        .top-grid {
+            display: grid;
+            grid-template-columns: minmax(280px, 360px) 1fr;
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+
+        .mission-card,
+        .debug-card {
+            padding: 16px;
+        }
+
+        .card-title {
+            margin: 0 0 12px;
+            font-size: 16px;
+            font-weight: 800;
+        }
+
+        .target-box label {
+            display: block;
+            margin-bottom: 7px;
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .target-row {
+            display: flex;
+            gap: 8px;
+        }
+
+        .target-row input {
+            min-width: 0;
+            flex: 1;
+            padding: 11px 12px;
+            border: 1px solid #aeb8c4;
+            border-radius: 10px;
+            background: white;
+            font-size: 16px;
+        }
+
+        .hint {
+            margin: 8px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.35;
+        }
+
+        .mode-control {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 14px;
+            padding: 12px;
+            border-radius: 12px;
+            background: var(--card-soft);
+            font-weight: 800;
+        }
+
+        .mode-control span:first-child {
+            color: var(--manual);
+        }
+
+        .mode-control span:last-child {
+            color: var(--auto);
+        }
+
+        .switch {
+            position: relative;
+            width: 62px;
+            height: 32px;
+            flex: none;
+        }
+
+        .switch input {
+            display: none;
+        }
+
+        .slider {
+            position: absolute;
+            inset: 0;
+            background: #aeb6bf;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .slider::before {
+            content: "";
+            position: absolute;
+            width: 26px;
+            height: 26px;
+            left: 3px;
+            top: 3px;
+            background: white;
+            border-radius: 50%;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22);
+            transition: 0.2s;
+        }
+
+        .switch input:checked + .slider {
+            background: var(--auto);
+        }
+
+        .switch input:checked + .slider::before {
+            transform: translateX(30px);
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(110px, 1fr));
+            gap: 10px;
+        }
+
+        .status-card {
+            min-height: 68px;
+            padding: 11px;
+            border: 1px solid #e1e6ec;
+            border-radius: 12px;
+            background: var(--card-soft);
+        }
+
+        .status-card small {
+            display: block;
+            margin-bottom: 5px;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .status-card strong {
+            display: block;
+            overflow-wrap: anywhere;
+            font-size: 15px;
+        }
+
+        .tag-card strong {
+            font-size: 14px;
+        }
+
+        .tag-found {
+            color: var(--ok);
+        }
+
+        .tag-missing {
+            color: var(--danger);
+        }
+
+        #missionMessage {
+            grid-column: 1 / -1;
+            padding: 12px;
+            border-radius: 12px;
+            background: var(--primary-soft);
+            line-height: 1.4;
+        }
+
+        #missionMessage.warning {
+            color: var(--danger);
+            background: #fdecea;
+            font-weight: 700;
+        }
+
+        .height-slider-panel {
+            display: grid;
+            grid-template-columns: auto 70px 1fr;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 14px;
+            padding: 14px 16px;
+        }
+
+        .height-slider-panel strong {
+            white-space: nowrap;
+        }
+
+        #heightValue {
+            padding: 7px 10px;
+            border-radius: 999px;
+            background: var(--primary-soft);
+            color: var(--primary);
+            font-weight: 800;
+            text-align: center;
+        }
+
+        #heightSlider {
+            width: 100%;
+        }
+
+        .workspace {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+
+        .telemetry-panel {
+            display: grid;
+            grid-template-columns: 110px 1fr;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 16px;
+        }
+
+        .telemetry-panel strong {
+            font-size: 14px;
+        }
+
+        .vertical-bar {
+            position: relative;
+            width: 100%;
+            height: 22px;
+            min-height: 22px;
+            display: flex;
+            align-items: stretch;
+            overflow: hidden;
+            border-radius: 999px;
+            background: #dfe6ee;
+        }
+
+        .vertical-fill {
+            width: 0%;
+            height: 100%;
+            border-radius: 999px;
+            background: var(--primary);
+            transition: width 0.15s ease;
+        }
+
+        #forkBar {
+            background: #8e44ad;
+        }
+
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 14px;
+        }
+
+        .joystick-card {
+            padding: 12px;
+        }
+
+        .joystick-title {
+            margin: 0 0 10px;
+            color: var(--muted);
+            font-weight: 800;
+            text-align: center;
+        }
+
+        .zone {
+            height: 220px;
+            position: relative;
+            border: 1px dashed #b8c2cc;
+            border-radius: 14px;
+            background: linear-gradient(180deg, #ffffff 0%, #f7f9fc 100%);
+            touch-action: none;
+        }
+
+        @media (max-width: 900px) {
+            .page {
+                width: min(100% - 20px, 1180px);
+            }
+
+            .top-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .status-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .workspace {
+                display: grid;
+                grid-template-columns: 1fr;
+                min-height: 0;
+            }
+
+
+            .telemetry-panel {
+                order: 2;
+                display: grid;
+                grid-template-columns: 96px 1fr;
+                align-items: center;
+                min-height: 0;
+                padding: 10px 12px;
+            }
+
+            .telemetry-panel strong {
+                text-align: left;
+            }
+
+            .vertical-bar {
+                width: 100%;
+                height: 20px;
+                min-height: 20px;
+                flex: none;
+                align-items: stretch;
+            }
+
+            .vertical-fill {
+                width: 0%;
+                height: 100%;
+            }
+        }
+
+        @media (max-width: 640px) {
+            body {
+                overflow-x: hidden;
+            }
+
+            button {
+                width: 100%;
+                padding: 11px 12px;
+            }
+
+            .page {
+                width: calc(100% - 12px);
+                padding: 8px 0 12px;
+            }
+
+            .page-header {
+                align-items: stretch;
+                flex-direction: column;
+                gap: 8px;
+                margin-bottom: 8px;
+            }
+
+            .page-title h1 {
+                font-size: 22px;
+            }
+
+            .page-title p {
+                display: none;
+            }
+
+            .connection-pill {
+                width: 100%;
+                min-width: 0;
+                padding: 8px;
+            }
+
+            .card {
+                border-radius: 12px;
+            }
+
+            .mission-card,
+            .debug-card {
+                padding: 12px;
+            }
+
+            .top-grid,
+            .workspace,
+            .controls {
+                gap: 8px;
+                margin-bottom: 8px;
+            }
+
+            .target-row {
+                display: grid;
+                grid-template-columns: 1fr 96px;
+                gap: 8px;
+            }
+
+            .target-row button {
+                width: auto;
+                padding-left: 10px;
+                padding-right: 10px;
+            }
+
+            .mode-control {
+                margin-top: 10px;
+                padding: 10px;
+                gap: 10px;
+            }
+
+            .status-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 8px;
+            }
+
+            .status-card {
+                min-height: 58px;
+                padding: 9px;
+            }
+
+            .status-card small {
+                font-size: 11px;
+            }
+
+            .status-card strong {
+                font-size: 13px;
+            }
+
+            #missionMessage {
+                padding: 10px;
+                font-size: 13px;
+            }
+
+            .height-slider-panel {
+                grid-template-columns: 1fr auto;
+                gap: 8px;
+                margin-bottom: 8px;
+                padding: 10px 12px;
+            }
+
+            #heightSlider {
+                grid-column: 1 / -1;
+                min-height: 32px;
+            }
+
+
+            .telemetry-panel {
+                grid-template-columns: 76px 1fr;
+                gap: 8px;
+                padding: 9px 10px;
+            }
+
+            .telemetry-panel strong {
+                font-size: 13px;
+            }
+
+            .vertical-bar {
+                height: 16px;
+                min-height: 16px;
+            }
+
+            .controls {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            .joystick-card {
+                padding: 8px;
+            }
+
+            .joystick-title {
+                margin-bottom: 6px;
+                font-size: 12px;
+            }
+
+            .zone {
+                height: 150px;
+                border-radius: 12px;
+            }
+        }
+
+        @media (max-width: 380px) {
+            .target-row {
+                grid-template-columns: 1fr;
+            }
+
+            .target-row button {
+                width: 100%;
+            }
+
+            .zone {
+                height: 136px;
+            }
+        }
+    </style>
 </head>
 
-<div class="height-slider-panel">
-    <span>Altura</span>
-    <div id="heightValue">
-    0%
-    </div>
-    <input 
-        type="range" 
-        id="heightSlider" 
-        min="0" 
-        max="100" 
-        value="0"
-    >
-</div>
-
 <body>
+    <main class="page">
+        <header class="page-header">
+            <div class="page-title">
+                <h1>Controle da Empilhadeira</h1>
+                <p>Controle manual, busca automática por AprilTag e debug em tempo real.</p>
+            </div>
+            <div id="connectionStatus" class="connection-pill offline">Offline</div>
+        </header>
 
-<div class="topbar">
-    🔋 Bateria
-    <div class="bar" style="width:200px;height:10px;margin:auto;">
-        <div id="batteryBar"></div>
-    </div>
-</div>
+        <section class="top-grid">
+            <div class="mission-card card">
+                <h2 class="card-title">Missão</h2>
 
-<div class="mode-control">
-<span>MANUAL</span>
-<label class="switch">
-<input type="checkbox" id="modeSwitch">
-<span class="slider"></span>
-</label>
-<span>AUTO</span>
-</div>
+                <div class="target-box">
+                    <label for="targetTag">AprilTag procurada</label>
+                    <div class="target-row">
+                        <input id="targetTag" type="number" min="0" step="1" placeholder="Ex.: 4">
+                        <button id="setTargetButton" type="button">Definir</button>
+                    </div>
+                    <p class="hint">O alvo só pode ser alterado no modo MANUAL.</p>
+                </div>
 
-<div id="modeStatus">
-    Modo: MANUAL
-</div>
+                <div class="mode-control">
+                    <span>MANUAL</span>
+                    <label class="switch" aria-label="Alternar modo manual e automático">
+                        <input type="checkbox" id="modeSwitch">
+                        <span class="slider"></span>
+                    </label>
+                    <span>AUTO</span>
+                </div>
+            </div>
 
-<div class="center">
+            <div class="debug-card card">
+                <h2 class="card-title">Estado em tempo real</h2>
 
-    <div class="panel">
-        Vel
-        <div class="bar">
-            <div id="speedBar"></div>
-        </div>
-    </div>
+                <div class="status-grid">
+                    <div class="status-card">
+                        <small>Modo</small>
+                        <strong id="modeStatus">MANUAL</strong>
+                    </div>
+                    <div class="status-card">
+                        <small>Estado</small>
+                        <strong id="stateStatus">IDLE</strong>
+                    </div>
+                    <div class="status-card">
+                        <small>Fase interna</small>
+                        <strong id="phaseStatus">PARADO</strong>
+                    </div>
+                    <div class="status-card">
+                        <small>Tag alvo</small>
+                        <strong id="targetStatus">--</strong>
+                    </div>
+                    <div class="status-card tag-card">
+                        <small>Tags vistas</small>
+                        <strong id="detectedTagsStatus">Nenhuma</strong>
+                    </div>
+                    <div class="status-card tag-card">
+                        <small>Alvo na câmera</small>
+                        <strong id="targetDetectedStatus">Não</strong>
+                    </div>
+                    <div class="status-card tag-card">
+                        <small>Pose da tag alvo</small>
+                        <strong id="targetPoseStatus">X -- / Z --</strong>
+                    </div>
+                    <div class="status-card">
+                        <small>Estado ESP/LED</small>
+                        <strong id="espStateStatus">--</strong>
+                    </div>
+                    <div class="status-card">
+                        <small>Giroscópio</small>
+                        <strong id="gyroStatus">Sem dados</strong>
+                    </div>
+                    <div class="status-card orientation-card">
+                        <small>Orientação</small>
+                        <strong id="orientationStatus">R --° / P --° / Y --°</strong>
+                    </div>
+                    <div id="missionMessage">Informe a AprilTag e ative o modo AUTO.</div>
+                </div>
+            </div>
+        </section>
 
-    <div class="video-area">
-        <img id="cameraVideo" alt="Video">
-    </div>
+        <section class="workspace">
+            <aside class="telemetry-panel card">
+                <strong>Velocidade</strong>
+                <div class="vertical-bar">
+                    <div id="speedBar" class="vertical-fill"></div>
+                </div>
+            </aside>
 
-    <div class="panel">
-        Altura
-        <div class="bar">
-            <div id="forkBar"></div>
-        </div>
-    </div>
+            <aside class="telemetry-panel card">
+                <strong>Garfo</strong>
+                <div class="vertical-bar">
+                    <div id="forkBar" class="vertical-fill"></div>
+                </div>
+            </aside>
+        </section>
 
-</div>
+        <section class="controls">
+            <div class="joystick-card card">
+                <p class="joystick-title">Avanço / ré</p>
+                <div class="zone" id="leftZone" aria-label="Controle de avanço e ré"></div>
+            </div>
 
-<div class="controls">
-    <div class="zone" id="leftZone"></div>
-    <div class="zone" id="rightZone"></div>
-</div>
+            <div class="joystick-card card">
+                <p class="joystick-title">Giro</p>
+                <div class="zone" id="rightZone" aria-label="Controle de giro"></div>
+            </div>
 
-<script>
-const socket = io();
+            <div class="joystick-card card">
+                <p class="joystick-title">Garfo</p>
+                <div class="zone" id="forkZone" aria-label="Controle do garfo"></div>
+            </div>
+        </section>
+    </main>
 
-let forkHeight = 0;
-let throttle = 0;
-let yaw = 0;
-let automaticMode = false;
+    <script>
+        const socket = io();
 
-const modeStatus = document.getElementById("modeStatus");
-const modeSwitch = document.getElementById("modeSwitch");
-const heightSlider = document.getElementById("heightSlider");
-const heightValue = document.getElementById("heightValue");
+        let fork = 0;
+        let throttle = 0;
+        let yaw = 0;
+        let automaticMode = false;
+        let lastStatus = null;
+        let pendingAuto = false;
 
-socket.on("status", (data) => {
-    if(!data.mode)
-        return;
-    modeStatus.innerText = "Modo: " + data.mode;
-    automaticMode = data.mode == "AUTO";
-    modeSwitch.checked = automaticMode;
-});
+        const connectionStatus = document.getElementById("connectionStatus");
+        const modeStatus = document.getElementById("modeStatus");
+        const stateStatus = document.getElementById("stateStatus");
+        const phaseStatus = document.getElementById("phaseStatus");
+        const targetStatus = document.getElementById("targetStatus");
+        const detectedTagsStatus = document.getElementById("detectedTagsStatus");
+        const targetDetectedStatus = document.getElementById("targetDetectedStatus");
+        const targetPoseStatus = document.getElementById("targetPoseStatus");
+        const espStateStatus = document.getElementById("espStateStatus");
+        const gyroStatus = document.getElementById("gyroStatus");
+        const orientationStatus = document.getElementById("orientationStatus");
+        const missionMessage = document.getElementById("missionMessage");
+        const modeSwitch = document.getElementById("modeSwitch");
+        const targetTag = document.getElementById("targetTag");
+        const setTargetButton = document.getElementById("setTargetButton");
+        const speedBar = document.getElementById("speedBar");
+        const forkBar = document.getElementById("forkBar");
 
-modeSwitch.addEventListener("change",()=>{
-    automaticMode = modeSwitch.checked;
-    socket.emit("mode",{
-        mode: automaticMode
-        ? "AUTO"
-        : "MANUAL"
-    });
-});    
+        function setBarFill(element, normalizedValue) {
+            const percentage = Math.max(0, Math.min(100, Number(normalizedValue) * 100));
+            element.style.height = `${percentage}%`;
+            element.style.width = `${percentage}%`;
+        }
 
-heightSlider.addEventListener("input", () => {
-    forkHeight = Number(heightSlider.value) / 100;
-    heightValue.innerText = heightSlider.value+"%";
-    document.getElementById("forkBar").style.height =
-        (forkHeight * 100) + "%";
+        function formatNumber(value, decimals = 1) {
+            const number = Number(value);
+            return Number.isFinite(number) ? number.toFixed(decimals) : "--";
+        }
 
-    send();
-});
+        function updateAprilTagDisplay(payload = {}) {
+            const target = payload.target_tag;
+            const ids = Array.isArray(payload.detected_tag_ids)
+                ? payload.detected_tag_ids
+                : (Array.isArray(payload.ids)
+                    ? payload.ids
+                    : (Array.isArray(payload.tags)
+                        ? payload.tags.map(tag => tag.id).filter(id => id !== undefined && id !== null)
+                        : []));
 
-/* =======================================================
-   VÍDEO VIA WEBSOCKET
-   ======================================================= */
+            const targetInfo = payload.target_tag_info || null;
+            const targetDetected = Boolean(payload.target_tag_detected);
+            const detectorOk = payload.apriltag_detector_ok ?? payload.detector_ok;
+            const detectorError = payload.apriltag_error ?? payload.error;
+
+            targetStatus.innerText = target !== null && target !== undefined
+                ? `ID ${target}`
+                : "--";
+
+            if (ids.length > 0) {
+                detectedTagsStatus.innerText = ids.map(id => `ID ${id}`).join(", ");
+            } else if (detectorOk === false && detectorError) {
+                detectedTagsStatus.innerText = `Detector OFF: ${detectorError}`;
+            } else {
+                detectedTagsStatus.innerText = "Nenhuma";
+            }
+
+            targetDetectedStatus.innerText = targetDetected ? "Sim" : "Não";
+            targetDetectedStatus.classList.toggle("tag-found", targetDetected);
+            targetDetectedStatus.classList.toggle("tag-missing", !targetDetected);
+
+            if (targetInfo) {
+                const x = formatNumber(targetInfo.x_mm, 0);
+                const z = formatNumber(targetInfo.z_mm, 0);
+                const angle = formatNumber(targetInfo.giro_horizontal_graus, 1);
+                targetPoseStatus.innerText = `X ${x} mm / Z ${z} mm / ang ${angle}°`;
+            } else {
+                targetPoseStatus.innerText = "X -- / Z --";
+            }
+        }
+
+        function updateOrientationDisplay(gyro) {
+            if (!gyro || !gyro.available) {
+                gyroStatus.innerText = "False";
+                orientationStatus.innerText = "R --° / P --° / Y --°";
+                return;
+            }
+
+            const roll = formatNumber(gyro.roll_deg, 1);
+            const pitch = formatNumber(gyro.pitch_deg, 1);
+            const yawValue = formatNumber(gyro.yaw_deg, 1);
+            gyroStatus.innerText = `${yawValue}°`;
+            orientationStatus.innerText = `R ${roll}° / P ${pitch}° / Y ${yawValue}°`;
+        }
+
+        const joystickSize = window.matchMedia("(max-width: 380px)").matches
+            ? 116
+            : (window.matchMedia("(max-width: 640px)").matches ? 130 : 180);
+
+        function setConnectionStatus(text, online) {
+            connectionStatus.innerText = text;
+            connectionStatus.classList.toggle("online", online);
+            connectionStatus.classList.toggle("offline", !online);
+        }
+
+        function showMessage(text, isError = false) {
+            missionMessage.innerText = text;
+            missionMessage.classList.toggle("warning", isError);
+        }
+
+        function defineTarget(startAutoAfter = false) {
+            const raw = targetTag.value.trim();
+
+            if (raw === "") {
+                showMessage("Digite o número da AprilTag antes de iniciar.", true);
+                return;
+            }
+
+            pendingAuto = startAutoAfter;
+            socket.emit("set_target", { tag_id: Number(raw) });
+        }
+
+        setTargetButton.addEventListener("click", () => defineTarget(false));
+
+        targetTag.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                defineTarget(false);
+            }
+        });
+
+        socket.on("connect", () => setConnectionStatus("Online", true));
+        socket.on("disconnect", () => setConnectionStatus("Offline", false));
 
 
-const videoHost = window.location.hostname || "localhost";
-const videoSocket = new WebSocket(`ws://${videoHost}:8765`);
+        socket.on("target_result", (data) => {
+            showMessage(data.message, !data.ok);
 
-videoSocket.binaryType = "arraybuffer";
+            if (data.ok && pendingAuto) {
+                pendingAuto = false;
+                socket.emit("mode", { mode: "AUTO" });
+            } else if (!data.ok) {
+                pendingAuto = false;
+                modeSwitch.checked = false;
+            }
+        });
 
-const cameraVideo = document.getElementById("cameraVideo");
+        modeSwitch.addEventListener("change", () => {
+            if (modeSwitch.checked) {
+                defineTarget(true);
+            } else {
+                pendingAuto = false;
+                socket.emit("mode", { mode: "MANUAL" });
+            }
+        });
 
-let urlAnterior = null;
+        socket.on("mode_result", (data) => {
+            if (!data.ok) {
+                showMessage(data.message, true);
+                modeSwitch.checked = automaticMode;
+            }
+        });
 
-videoSocket.onmessage = (event) => {
+        socket.on("status", (data) => {
+            lastStatus = data;
+            automaticMode = data.mode === "AUTO";
 
-    const blob = new Blob(
-        [event.data],
-        { type: "image/jpeg" }
-    );
+            modeSwitch.checked = automaticMode;
+            modeStatus.innerText = data.mode || "--";
+            stateStatus.innerText = data.state || "--";
+            phaseStatus.innerText = data.phase || "--";
+            updateAprilTagDisplay(data);
 
-    const url = URL.createObjectURL(blob);
+            if (data.gyro_ok) {
+                updateOrientationDisplay({
+                    available: true,
+                    driver: data.gyro_driver,
+                    roll_deg: data.gyro_roll_deg,
+                    pitch_deg: data.gyro_pitch_deg,
+                    yaw_deg: data.gyro_yaw_deg,
+                    gx_dps: data.gyro_gx_dps,
+                    gy_dps: data.gyro_gy_dps,
+                    gz_dps: data.gyro_gz_dps,
+                    error: data.gyro_error,
+                    address: data.gyro_address,
+                    sda: data.gyro_sda,
+                    scl: data.gyro_scl,
+                    i2c_config: data.gyro_i2c_config,
+                });
+            } else {
+                updateOrientationDisplay({
+                    available: false,
+                    driver: data.gyro_driver,
+                    error: data.gyro_error,
+                    address: data.gyro_address,
+                    sda: data.gyro_sda,
+                    scl: data.gyro_scl,
+                    i2c_config: data.gyro_i2c_config,
+                });
+            }
 
-    cameraVideo.src = url;
+            showMessage(data.message || "", false);
 
-    if(urlAnterior){
-        URL.revokeObjectURL(urlAnterior);
-    }
+            targetTag.disabled = automaticMode;
+            setTargetButton.disabled = automaticMode;
 
-    urlAnterior = url;
-};
+            // Não apague o campo enquanto o operador está digitando.
+            // Antes, cada pacote de status com target_tag=null limpava o input
+            // a cada ~200 ms, impedindo definir a AprilTag pelo celular.
+            const targetInputFocused = document.activeElement === targetTag;
 
-/* =======================================================
-   JOYSTICK ESQUERDO
-   ======================================================= */
+            if (data.target_tag !== null && data.target_tag !== undefined) {
+                if (!targetInputFocused || targetTag.value.trim() === "") {
+                    targetTag.value = data.target_tag;
+                }
+            }
+        });
 
-const left = nipplejs.create({
-    zone: document.getElementById('leftZone'),
-    mode: 'static',
-    position: { left: '50%', top: '50%' },
-    color: 'blue',
-    lockY: true,
-    size: 180
-});
+        socket.on("apriltags", (data) => {
+            updateAprilTagDisplay({
+                target_tag: data.target_tag,
+                detected_tag_ids: data.ids,
+                target_tag_detected: data.target_tag_detected,
+                target_tag_info: data.target_tag_info,
+                apriltag_detector_ok: data.detector_ok,
+                apriltag_error: data.error,
+                apriltag_age_s: data.age_s,
+                tags: data.tags,
+            });
+        });
 
-left.on('move', (evt, data) => {
-    if(data.vector){
-        throttle = data.vector.y;
-        send();
-    }
-});
+        /* ======================== JOYSTICKS ======================= */
 
-left.on('end', () => {
-    throttle = 0;
-    send();
-});
+        const left = nipplejs.create({
+            zone: document.getElementById("leftZone"),
+            mode: "static",
+            position: { left: "50%", top: "50%" },
+            color: "blue",
+            lockY: true,
+            size: joystickSize
+        });
 
-/* =======================================================
-   JOYSTICK DIREITO
-   ======================================================= */
+        left.on("move", (evt, data) => {
+            if (data.vector) {
+                throttle = data.vector.y;
+                sendManual();
+            }
+        });
 
-const right = nipplejs.create({
-    zone: document.getElementById('rightZone'),
-    mode: 'static',
-    position: { left: '50%', top: '50%' },
-    color: 'red',
-    lockX: true,
-    size:180
-});
+        left.on("end", () => {
+            throttle = 0;
+            sendManual();
+        });
 
-right.on('move', (evt, data) => {
-    if(data.vector){
-        yaw = data.vector.x;
-        send();
-    }
-});
+        const right = nipplejs.create({
+            zone: document.getElementById("rightZone"),
+            mode: "static",
+            position: { left: "50%", top: "50%" },
+            color: "red",
+            lockX: true,
+            size: joystickSize
+        });
 
-right.on('end', () => {
-    yaw = 0;
-    send();
-});
+        right.on("move", (evt, data) => {
+            if (data.vector) {
+                yaw = data.vector.x;
+                sendManual();
+            }
+        });
 
-/* =======================================================
-   ENVIO
-   ======================================================= */
+        right.on("end", () => {
+            yaw = 0;
+            sendManual();
+        });
 
-function send(){
-    if (automaticMode)
-        return;
+        const forkJoystick = nipplejs.create({
+            zone: document.getElementById("forkZone"),
+            mode: "static",
+            position: { left: "50%", top: "50%" },
+            color: "purple",
+            lockY: true,
+            size: joystickSize
+        });
 
-    socket.emit('control', {
-        throttle: throttle,
-        yaw: yaw,
-        fork_height: forkHeight
-    });
-}
+        forkJoystick.on("move", (evt, data) => {
+            if (data.vector) {
+                fork = data.vector.y;
+                sendManual();
+            }
+        });
 
-/* =======================================================
-   TELEMETRIA
-   ======================================================= */
+        forkJoystick.on("end", () => {
+            fork = 0;
+            sendManual();
+        });
 
-socket.on("telemetry", (data) => {
+        function sendManual() {
+            if (automaticMode) {
+                return;
+            }
 
-    if(data.speed !== undefined){
-        document.getElementById("speedBar").style.height =
-            (data.speed * 100) + "%";
-    }
+            socket.emit("control", {
+                throttle: throttle,
+                yaw: yaw,
+                fork: fork
+            });
+        }
 
-    if(data.fork_height !== undefined){
-        document.getElementById("forkBar").style.height =
-            (data.fork_height * 100) + "%";
-    }
+        // Mantém o comando manual vivo no ESP32.
+        // Se a conexão cair, o timeout do ESP32 ainda para os motores.
+        setInterval(() => {
+            if (!automaticMode) {
+                sendManual();
+            }
+        }, 150);
 
-    if(data.battery !== undefined){
-        document.getElementById("batteryBar").style.width =
-            (data.battery * 100) + "%";
-    }
-});
-</script>
+        /* ======================== TELEMETRIA ====================== */
 
+        socket.on("telemetry", (data) => {
+            let normalizedSpeed = null;
+
+            if (data.speed !== undefined) {
+                normalizedSpeed = Math.abs(Number(data.speed));
+            } else if (data.m1 && data.m2) {
+                const rpm = Math.max(
+                    Math.abs(Number(data.m1.rpm || 0)),
+                    Math.abs(Number(data.m2.rpm || 0))
+                );
+                normalizedSpeed = Math.min(1, rpm / 180);
+            }
+
+            if (normalizedSpeed !== null) {
+                setBarFill(speedBar, normalizedSpeed);
+            }
+
+            if (data.fork !== undefined) {
+                setBarFill(forkBar, Math.abs(Number(data.fork)));
+            } else if (data.fork_height !== undefined) {
+                setBarFill(forkBar, Number(data.fork_height));
+            }
+
+            if (data.forklift_state) {
+                const espMode = data.forklift_state.mode || "--";
+                const espState = data.forklift_state.timeout ? "TIMEOUT" : (data.forklift_state.state || "--");
+                const espPhase = data.forklift_state.phase || "--";
+                const ledInfo = data.forklift_state.led_rgb_enabled ? "LED ON" : "LED OFF";
+                espStateStatus.innerText = `${espMode} / ${espState} / ${espPhase} / ${ledInfo}`;
+            } else if (data.estado !== undefined) {
+                espStateStatus.innerText = String(data.estado);
+            }
+
+            if (data.app_status) {
+                modeStatus.innerText = data.app_status.mode || modeStatus.innerText;
+                stateStatus.innerText = data.app_status.state || stateStatus.innerText;
+                phaseStatus.innerText = data.app_status.phase || phaseStatus.innerText;
+                updateAprilTagDisplay(data.app_status);
+            }
+
+            if (data.gyro) {
+                updateOrientationDisplay(data.gyro);
+            }
+        });
+    </script>
 </body>
 </html>
