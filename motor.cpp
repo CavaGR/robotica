@@ -371,7 +371,7 @@ long ultimoDeltaPulsosM3 = 0;
 const float PULSOS_POR_REVOLUCAO = 720.0f;
 
 // RPM para comando máximo.
-const float RPM_MAXIMO = 130f;
+const float RPM_MAXIMO = 130.0f;
 
 // Inverta caso o motor físico esteja no sentido contrário.
 const bool INVERTER_MOTOR_1 = false;
@@ -392,7 +392,7 @@ const bool INVERTER_ENCODER_3 = false;
 
 const long GARFO_PULSOS_CURSO_TOTAL = 7200;  // mantido para telemetria de posição
 const int PWM_MIN_GARFO = 60;
-const int PWM_MAX_GARFO = 180;
+const int PWM_MAX_GARFO = 210;
 
 float forkCommand = 0.0f;
 float forkPositionAtual = 0.0f;
